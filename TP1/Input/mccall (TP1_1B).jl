@@ -383,26 +383,35 @@ savefig(ej3,"E[T]_as_a_Function_of_β.png")
 
 
 #Robustness – opcional
-print("McCall, J. J. 'Economics of Information and Job Search' The Quarterly Journal of Economics, 1970, vol. 84, issue 1, 113-126\n")
+
+print("McCall, J. J. 'Economics of Information and Job Search' The Quarterly Journal of Economics, 1970, vol. 84, issue 1, 113-126\n (ROBUST VERSION)")
 print("Loading codes… ")
 
 using Distributions, LinearAlgebra, StatsBase, PlotlyJS
 
-mutable struct McCallRobus
+mutable struct McCall
     β::Float64
     γ::Float64
-    θ::Float64
-
+    θ::Float64  # Agregue esto
     b::Float64
-
     wgrid::Vector{Float64}
     pw::Vector{Float64}
-
     w_star::Float64
     v::Vector{Float64}
 end
 
-function McCall(; β = 0.96, γ = 0, b = 1, μw = 1, σw = 0.05, Nσ = 0, wmin = 0.5, wmax = 2, Nw = 500, θ = 1.0)
+function McCall(;
+    β = 0.96,
+    γ = 0,
+    θ = 1.0,  # Agregue esto
+    b = 1,
+    μw = 1,
+    σw = 0.05,
+    Nσ = 0,
+    wmin = 0.5,
+    wmax = 2,
+    Nw = 500)
+
     if Nσ > 0
         wmin = μw - Nσ * σw
         wmax = μw + Nσ * σw
@@ -415,11 +424,147 @@ function McCall(; β = 0.96, γ = 0, b = 1, μw = 1, σw = 0.05, Nσ = 0, wmin =
     d = Normal(μw, σw)
 
     pw = [pdf(d, wv) for wv in wgrid]
+    # pw = pdf.(d, wgrid)
+
     pw = pw / sum(pw)
 
     v = zeros(Nw)
 
-    return McCall(β, γ, θ, b, wgrid, pw, w_star, v)
+    return McCall(β, γ, θ, b, wgrid, pw, w_star, v)  # Añadi θ aquí
+end
+
+
+
+
+function u(c, mc::McCall)
+	γ = mc.γ
+
+	if γ == 1
+		return log(c)
+	else
+		return c^(1-γ) / (1-γ)
+	end
+end
+
+function R(w, mc::McCall)
+	## Valor de aceptar una oferta w: R(w) = u(w) + β R(w)
+	β = mc.β
+	return u(w, mc) / (1-β)
+end
+
+# Definir el operador de distorsión T(X)
+function T(X, θ)
+    return -(1/θ) * log(mean(exp.(-θ .* X)))
+end
+
+# Modificar la función E_v(mc::McCall) para usar el operador de distorsión
+function E_v(mc::McCall, θ, robust=true)
+    if robust
+        return T(mc.v, θ)
+    else
+        return mean(mc.v)
+    end
+end
+
+# Modificar la ecuación de Bellman en la función vf_iter!(new_v, mc::McCall)
+function vf_iter!(new_v, mc::McCall, θ, robust=true)
+    rechazar = u(mc.b, mc) + mc.β * E_v(mc, θ, robust)
+    for (jw, wv) in enumerate(mc.wgrid)
+        aceptar = R(wv, mc)
+        new_v[jw] = max(aceptar, rechazar)
+        if aceptar >= rechazar
+            mc.w_star = wv
+            break
+        end
+    end
+end
+
+# Modificar la función vfi!(mc::McCall; maxiter = 2000, tol = 1e-8) para incluir θ y robust como argumentos
+function vfi!(mc::McCall, θ, robust=true; maxiter = 2000, tol = 1e-8)
+    dist, iter = 1+tol, 0
+    new_v = similar(mc.v)
+    while dist > tol && iter < maxiter
+        iter += 1
+        vf_iter!(new_v, mc, θ, robust)
+        dist = norm(mc.v - new_v)
+        mc.v .= new_v
+    end
+end
+
+# Definir rangos para θ y w⋆
+θ_range = range(0.1, stop=1.0, length=100)  # Limita el rango de θ aquí
+
+w_star_range = range(0.1, stop=1.0, length=100)
+# Inicializar arreglos para almacenar los resultados
+E_T_values = []
+w_star_values = []
+
+# Calcular E[T] y w⋆ para cada valor de θ 
+
+#ACÁ SALTA EL ERROR
+for θ in θ_range
+    mc = McCall(β=0.96, γ=0.0, b=1.0, μw=1.0, σw=0.05, Nσ=0.0,wmin=0.5,wmax=2.0,Nw=500 ,θ=θ) 
+    vfi!(mc; θ=θ, robust=true) # Acà tiene que ir un true
+    push!(E_T_values, E_v(mc; θ=θ, robust=true)) # Modifica esta línea
+    push!(w_star_values, mc.w_star)
+end
+
+# Crear gráficos
+p1 = plot(θ_range,E_T_values,label="E[T]",xlabel="θ",ylabel="E[T]",title="E[T] vs θ")
+p2 = plot(θ_range,w_star_values,label="w⋆",xlabel="θ",ylabel="w⋆",title="w⋆ vs θ")
+
+# Mostrar gráficos
+plot(p1,p2)
+
+
+
+print("McCall, J. J. 'Economics of Information and Job Search' The Quarterly Journal of Economics, 1970, vol. 84, issue 1, 113-126\n (ROBUST VERSION)")
+print("Loading codes… ")
+
+using Distributions, LinearAlgebra, StatsBase, PlotlyJS, Plots
+
+mutable struct McCall
+    β::Float64
+    γ::Float64
+    θ::Float64  # Agregue esto
+    b::Float64
+    wgrid::Vector{Float64}
+    pw::Vector{Float64}
+    w_star::Float64
+    v::Vector{Float64}
+end
+
+function McCall(;
+    β = 0.96,
+    γ = 0,
+    θ = 1.0,  # Agregue esto
+    b = 1,
+    μw = 1,
+    σw = 0.05,
+    Nσ = 0,
+    wmin = 0.5,
+    wmax = 2,
+    Nw = 500)
+
+    if Nσ > 0
+        wmin = μw - Nσ * σw
+        wmax = μw + Nσ * σw
+    end
+
+    wgrid = range(wmin, wmax, length=Nw)
+
+    w_star = first(wgrid)
+
+    d = Normal(μw, σw)
+
+    pw = [pdf(d, wv) for wv in wgrid]
+    # pw = pdf.(d, wgrid)
+
+    pw = pw / sum(pw)
+
+    v = zeros(Nw)
+
+    return McCall(β, γ, θ, b, wgrid, pw, w_star, v)  # Añadi θ aquí
 end
 
 function u(c, mc::McCall)
@@ -437,85 +582,93 @@ function R(w, mc::McCall)
     return u(w, mc) / (1-β)
 end
 
-function E_v(mc::McCall; robust::Bool = false)
-    Ev = 0.0
+# Definir el operador de distorsión T(X)
+function T(X, θ)
+    return -(1/θ) * log(mean(exp.(-θ .* X)))
+end
+
+# Modificar la función E_v(mc::McCall) para usar el operador de distorsión
+function E_v(mc::McCall, θ, robust=true)
     if robust
-        θ = mc.θ
-        for (jwp, wv) in enumerate(mc.wgrid)
-            Ev += mc.pw[jwp] * exp(-θ * mc.v[jwp])
-        end
-        Ev = -log(Ev) / θ
+        X = max.(exp.(-θ .* mc.v), eps())
+        return T(X, θ)
     else
-        for (jwp, wv) in enumerate(mc.wgrid)
-            Ev += mc.pw[jwp] * mc.v[jwp]
-        end
-    end
-    return Ev
-end
-
-function update_v(ac, re, EV=false)
-    if EV
-        χ = 0.1
-        prob = exp(ac/χ)/(exp(ac/χ)+exp(re/χ))
-        V = χ * log( exp(ac/χ) + exp(re/χ) )
-        return V
-    else
-        return max(ac, re)
+        return mean(mc.v)
     end
 end
-
-function vf_iter!(new_v, mc::McCall)
-    flag = 0
-    θ = mc.θ
-
-    rechazar = u(mc.b, mc) + mc.β * E_v(mc)
-
+# Modificar la ecuación de Bellman en la función vf_iter!(new_v, mc::McCall)
+function vf_iter!(new_v, mc::McCall, θ, robust=true)
+    rechazar = u(mc.b, mc) + mc.β * E_v(mc, θ, robust)
     for (jw, wv) in enumerate(mc.wgrid)
         aceptar = R(wv, mc)
-
-        new_v[jw] = update_v(aceptar, rechazar)
-
-        if flag == 0 && aceptar >= rechazar
+        new_v[jw] = max(aceptar, rechazar)
+        if aceptar >= rechazar
             mc.w_star = wv
-            flag = 1
+            break
         end
     end
 end
 
-function vfi!(mc::McCall; maxiter = 2000, tol = 1e-8, verbose=true)
+# Modificar la función vfi!(mc::McCall; maxiter = 2000, tol = 1e-8) para incluir θ y robust como argumentos
+function vfi!(mc::McCall, θ, robust=true; maxiter = 2000, tol = 1e-8)
     dist, iter = 1+tol, 0
     new_v = similar(mc.v)
     while dist > tol && iter < maxiter
         iter += 1
-        vf_iter!(new_v, mc)
+        vf_iter!(new_v, mc, θ, robust)
         dist = norm(mc.v - new_v)
         mc.v .= new_v
-        if verbose
-            print("Iter $iter: dist = $dist\n")
-        end
-    end
-    if verbose
-        if iter == maxiter
-            print("Abandoné después de ")
-        else
-            print("Terminé en ")
-        end
-        print("$iter iteraciones.\nDist = $dist\n")
     end
 end
 
-# ... (Funciones de gráficos y simulaciones) ...
+# Definir rangos para θ y w⋆
+θ_range = range(0.1, stop=2.0, length=100)  # Limita el rango de θ aquí
 
-mc = McCallRobus(β=0.96, γ=0.0, θ=2.0, b=1.0, μw=1.0, σw=0.05, wmin=0.0, wmax=2.0, Nw=500)  # Proporciona los argumentos como argumentos nombrados
-# Ejemplo de uso:
-vfi!(mc)  # Resolver el modelo
+w_star_range = range(0.1, stop=.0, length=100)
+# Inicializar arreglos para almacenar los resultados
+E_T_values = []
+w_star_values = []
 
-# Calcular E[v] (sin robustez)
-ev_normal = E_v(mc, robust=false)
+# Calcular E[T] y w⋆ para cada valor de θ 
 
-# Calcular E[T] (con robustez)
-ev_robust = E_v(mc, robust=true)
+#ACÁ SALTA EL ERROR
+for θ in θ_range
+    mc = McCall(β=0.96, γ=0.0, b=1.0, μw=1.0, σw=0.05, Nσ=0.0,wmin=0.5,wmax=2.0,Nw=500 ,θ=θ) 
+    vfi!(mc, θ, true) # Acà tiene que ir un true
+    push!(E_T_values, E_v(mc, θ, true)) # Modifica esta línea
+    push!(w_star_values, mc.w_star)
+end
 
-# Puedes realizar gráficos y simulaciones según tus necesidades
+# Crear gráficos
+using Pkg
+Pkg.add("PlotlyJS")
+Pkg.add("Plots")
+Pkg.add("GR")
+using Plots
+# Crear gráfico de E[T] vs θ
+plot1 =Plots.plot(θ_range, E_T_values, label="E[T]", xlabel="θ", ylabel="E[T]", title="E[T] vs θ",legend=false)
+
+# Crear gráfico de w⋆ vs θ
+plot2 = Plots.plot(θ_range, w_star_values, label="w⋆", xlabel="θ", ylabel="w⋆", title="w⋆ vs θ")
+
+# Mostrar los gráficos
+Plots.plot(plot1, plot2, layout=(1,2), legend=false)
 
 
+Pkg.add("PyPlot")
+using PyPlot
+# Crear gráfico de E[T] vs θ
+figure()
+plot(θ_range, E_T_values, label="E[T]")
+xlabel("θ")
+ylabel("E[T]")
+title("E[T] vs θ")
+
+# Crear gráfico de w⋆ vs θ
+figure()
+plot(θ_range, w_star_values, label="w⋆")
+xlabel("θ")
+ylabel("w⋆")
+title("w⋆ vs θ")
+
+show()

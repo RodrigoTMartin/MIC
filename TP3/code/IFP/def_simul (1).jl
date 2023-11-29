@@ -100,7 +100,7 @@ function plots_comp(sample_short, sample_long)
        ],
        Layout(barmode="overlay", title="Distribución de deuda/PBI"))
 end
-
+plots_comp(samples_comp())
 
 
 function iter_simul_ifp(kt, yt, itp_gc, itp_gk, ymin, ymax, ρ, σ)
@@ -144,3 +144,6 @@ function simul(dd::IFP; k0 = mean(dd.kgrid), y0 = mean(dd.ygrid), T = 10_000)
 
     return sample
 end
+
+
+simul(IFP)

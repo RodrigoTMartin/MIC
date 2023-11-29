@@ -167,6 +167,12 @@ end
 
 
 
+
+
+p = plot(scatter(x=ddd.bgrid, y= (ddd.gc[:, 5]/dd.ygrid[5])))
+
+
+
 #Hago un gráfico normal 
 cvec=range(0.01,length=1000)
 
@@ -184,12 +190,14 @@ make_itp(dd)
 vfi!(dd)
 
 #Podemos hacer un gráfico para ver como esta persona elige las cosas. 
+propension=dd.gc[:,1]./dd.ygrid[:,1]
 
-
+#Esto es para ver como es la función de consumo con diferentes valores
+plot(scatter(x=dd.ygrid, y=dd.gc[:,1]./dd.ygrid[:,1],xaxis_title="Ingreso",yaxis_title="Propensión del consumo (gc(b, y)/y)"))
 
 
 #Me voy a hacer un vector de varios scatter para ver como es la función de consumo 
-plot([scatter(x=dd.bgrid, y=dd.gc[:,jy], name="y = $yv") for (jy, yv) in enumerate(dd.ygrid)]) #Esto es para ver como es la función de consumo con diferentes valores
+plot([scatter(x=dd.bgrid, y=dd.gc[:,jy]/dd.ygrid, name="y = $yv",xaxis_title="Bono (b)",yaxis_title="Ingreso (y)") for (jy, yv) in enumerate(dd.ygrid)]) #Esto es para ver como es la función de consumo con diferentes valores
 
 # Podemos ver que para un nivel de ingreso, mientras más deuda tenes menos podes consumir. Para niveles bajos de ingreso la función es más concava
 #Esto es porque vos tenes dos motivos para endeudarte, por el beta y suavizar consumo. Cuando estas muy cerca del limite
@@ -197,11 +205,12 @@ plot([scatter(x=dd.bgrid, y=dd.gc[:,jy], name="y = $yv") for (jy, yv) in enumera
 #Entonces te empezas a cubrir antes mientras menor ingreso tengas entonces la función de consumo es más concava.
 
 
-
+plot([])
 #Ejercicio 1. Funciones de consumo 
 
 #Este es el gráfico básico 
-plot([scatter(x=dd.bgrid, y=dd.gc[:,jy], name="y = $yv") for (jy, yv) in enumerate(dd.ygrid)])
+
+Ejercicio31=plot([scatter(x=dd.bgrid, y=dd.gc[:,jy]./ygrid, name="y = $yv") for (jy, yv) in enumerate(dd.ygrid)])
 #
 # Supongamos que dd es una instancia de NoDefault ya resuelta
 bb, yy = dd.bgrid, dd.ygrid
@@ -267,8 +276,10 @@ Ejercicio12= plot(contour_plot_propension, layout)
 savefig(Ejercicio12,"Ejercicio12.png")
 ## Revisar los gráficos
 
+plot([Ejercicio11,Ejercicio12],layout=Layout(grid=Dict(:rows=>1,:columns=>2)))
 
-
+p1=[Ejercicio11;
+Ejercicio12]
 #Ejercicio 2
 #Vamos primero con q 
 Nq=3
@@ -309,7 +320,7 @@ layout = Layout(
 
 Ejercicio21_consumption=plot(pv, layout)
 
-savefig(Ejercicio21,"Ejercicio21.png")
+savefig(Ejercicio21_consumption,"Ejercicio21.png")
 #Ahora con propensity consumption
 for (i, q) in enumerate(Q)
     # Calcular r correspondiente a q
@@ -339,9 +350,10 @@ layout2 = Layout(
 )
 Ejercicio21_pconsumption=plot(pv, layout2)
 
-savefig(Ejercicio21_pconsumption,"Ejercicio21.png")
+savefig(Ejercicio21_pconsumption,"Ejercicio21propensityq.png")
 
 
+d=[Ejercicio21_consumption; Ejercicio21_pconsumption]
 
 
 #Ejercicio 2: Análisis de σy
@@ -382,8 +394,8 @@ layout_sigma = Layout(
     title="Consumo vs. Ingreso para diferentes valores de σy"
 )
 
-plot(pv_sigma, layout_sigma)
-
+Ejercicio21_sigmacon=plot(pv_sigma, layout_sigma)
+savefig(Ejercicio21_sigmacon,"Ejercicio21_sigmacon.png")
 
 Nσy = 3
 σy_values = range(0.01, 0.1, length=Nσy)
@@ -424,10 +436,8 @@ layout_sigma2 = Layout(
 
 plot(pv, layout_sigma2)
 
-
-
-
-
+Ejercicio21_sigmacprop=plot(pv, layout_sigma)
+savefig(Ejercicio21_sigmacprop,"Ejercicio21_sigmapropc.png")
 
 
 
@@ -604,6 +614,247 @@ function vfi!(dd::Deuda; tol::Float64=1e-8, maxiter=5000, verbose=true) #Esta VF
 end
 
 
+#Gráfico
+
+function punto3a(dd::NoDefault)
+    theta = range(-1, 1, 3)
+    pv3 = Vector{AbstractTrace}(undef, 8)
+    for (qj, qv) in enumerate(theta)
+        ddd = NoDefault(θ=qv)
+        vfi!(ddd)
+        #for (jy, yv) in enumerate(dd.ygrid)
+        pv3[qj] = scatter(x=ddd.bgrid, y= (ddd.gc[:, 5]/dd.ygrid[5]), name = "θ = $qv")
+        #end 
+    end
+    plot(pv3)
+    layout = Layout(
+        title = "Propención a consumir vs Deuda para distintos θ (Y=0.98)",
+        xaxis_title = "Deuda",
+        yaxis_title = "Propención a consumir"
+       )
+       p3 = plot(pv3, layout)
+       savefig(p3, "Grafico3afinal.png")
+    end
+
+   
+#Me armo otro pero para el modelo no robusto
+
+
+abstract type Deuda end
+#Como reutiliza el codigo para los dos se arma el tipo deuda y dos subtipos de estructura una para el NoDefault y otra para el Arellano
+struct NoDefault <: Deuda
+    pars::Dict{Symbol,Float64}
+
+    bgrid::Vector{Float64} #Bonos
+    ygrid::Vector{Float64} #Ingresos es una cadena de markov
+    Py::Matrix{Float64} #Probabilidad de pasar de uno a otro
+
+    v::Matrix{Float64}
+
+    gc::Matrix{Float64} #Política de consumo
+    gb::Matrix{Float64} #Política de emisión de bonos
+end
+
+function NoDefault(;
+    β=0.96,
+    γ=2,
+    r=0.017, #Tasa libre de riesgo
+    ρy=0.945, #Persistencia del AR1 para el ingreso
+    σy=0.025, #Volatibilidad del AR1 para el ingreso
+    Nb=200, #puntos para los bonos
+    Ny=21, #puntos para el ingreso
+    bmax=0.9, #nivel maximo de los bonos
+    )
+    pars = Dict(:β => β, :γ => γ, :r => r, :ρy => ρy, :σy => σy, :Nb => Nb, :Ny => Ny, :bmax => bmax)
+#Convierte todo a flotante despues vemos que hacemos con esto
+    ychain = tauchen(Ny, ρy, σy, 0, 2) #Esto es para generar la cadena de markov mediante un AR1, por eso cargamos el paquete QuantEcon
+#μ = 0 y sd = 2
+
+    Py = ychain.p #Matriz de transición
+    ygrid = exp.(ychain.state_values) #Puntos, son el log de y por eso tomo la exponencial
+
+    bgrid = range(0, bmax, length=Nb)
+
+    v = zeros(Nb, Ny)
+    gc = zeros(Nb, Ny)
+    gb = zeros(Nb, Ny)
+
+    return NoDefault(pars, bgrid, ygrid, Py, v, gc, gb)
+end
+#En el problema de la torta habiamos resuelto todo con no te dejo tener consumos negativos pero acá le pongo un mínimo pero sino cumple el mínimo
+#Lo voy a calcular con la derivada de la función de utilidad en el mínimo (Aproximación de Taylor)
+u(cv, dd::Deuda) = u(cv, dd.pars[:γ])
+function u(cv, γ::Real)
+    cmin = 1e-3
+    if cv < cmin
+        # Por debajo de cmin, lineal con la derivada de u en cmin. Aproximación de Taylor
+        return u(cmin, γ) + (cv - cmin) * cmin^(-γ)
+    else
+        if γ == 1
+            return log(cv)
+        else
+            return cv^(1 - γ) / (1 - γ)
+        end
+    end
+end
+
+budget_constraint(bpv, bv, yv, q, dd::Deuda) = yv + q * bpv - bv
+
+# LA MAGIA DEL MULTIPLE DISPATCH
+debtprice(dd::NoDefault, bpv, yv, itp_q) = 1/(1+dd.pars[:r])
+
+
+function eval_value(jb, jy, bpv, itp_q, itp_v, dd::Deuda, robust=false)
+    """ Evalúa la función de valor en (b,y) para una elección de b' """
+    β = dd.pars[:β]
+    bv, yv = dd.bgrid[jb], dd.ygrid[jy]
+
+    # Interpola el precio de la deuda para el nivel elegido
+    qv = debtprice(dd, bpv, yv, itp_q)
+
+    # Deduce consumo del estado, la elección de deuda nueva y el precio de la deuda nueva
+    cv = budget_constraint(bpv, bv, yv, qv, dd)
+
+    # Evalúa la función de utilidad en c
+    ut = u(cv, dd)
+
+    # Calcula el valor esperado de la función de valor interpolando en b'
+    Ev = 0.0
+    Ev2 = 0.0
+    if robust
+        for (jyp, ypv) in enumerate(dd.ygrid)
+            prob = dd.Py[jy, jyp] 
+            Ev2+=exp((-dd.pars[:θ])*itp_v(bpv, ypv))*prob
+        end
+		Ev = (-(1/dd.pars[:θ])) * log(Ev2)
+    else 
+        for (jyp, ypv) in enumerate(dd.ygrid)
+            prob = dd.Py[jy, jyp]
+            Ev += prob * itp_v(bpv, ypv)
+        end
+    end
+    # v es el flujo de hoy más el valor de continuación esperado descontado
+    v = ut + β * Ev
+
+    return v, cv
+end
+
+
+function opt_value(jb, jy, itp_q, itp_v, dd::Deuda) #Esto es para ambos, yo puedo reutilizar esto para despues.
+    """ Elige b' en (b,y) para maximizar la función de valor """
+
+    # b' ∈ bgrid
+    b_min, b_max = extrema(dd.bgrid) #Extremos de la grilla
+
+    # Función objetivo en términos de b'
+    obj_f(bpv) = eval_value(jb, jy, bpv, itp_q, itp_v, dd)[1]
+
+    # Resuelve el máximo
+    res = Optim.maximize(obj_f, b_min, b_max) 
+
+    # Extrae el argmax
+    b_star = Optim.maximizer(res) 
+
+    # Extrae v y c consistentes con b'
+    vp, c_star = eval_value(jb, jy, b_star, itp_q, itp_v, dd) 
+
+    return vp, c_star, b_star
+end
+
+function vfi_iter!(new_v, itp_q, dd::NoDefault) #Esto es solo para sin default
+    # Reconstruye la interpolación de la función de valor
+    knts = (dd.bgrid, dd.ygrid)
+    itp_v = interpolate(knts, dd.v, Gridded(Linear()))
+
+    for jy in eachindex(dd.ygrid), jb in eachindex(dd.bgrid)
+
+        vp, c_star, b_star = opt_value(jb, jy, itp_q, itp_v, dd)
+
+        # Guarda los valores para repago 
+        new_v[jb, jy] = vp
+        dd.gb[jb, jy] = b_star
+        dd.gc[jb, jy] = c_star
+    end
+end
+
+# LA MAGIA DE MULTIPLE DISPATCH
+make_itp(dd::NoDefault) = 1/(1+dd.pars[:r]) #Esto es solo para default
+
+function vfi!(dd::Deuda; tol::Float64=1e-8, maxiter=5000, verbose=true) #Esta VFI es para los dos casos, con y sin deuda porque dd::Deuda
+    """ Itera sobre la ecuación de Bellman del país para encontrar la función de valor, probabilidad de default, consumo en repago y en default """
+    new_v = similar(dd.v)
+
+    dist = 1 + tol
+    iter = 0
+
+    # Interpolación del precio de la deuda (si hace falta)
+    itp_q = make_itp(dd)
+
+    # Loop principal sobre la Bellman del país
+    while dist > tol && iter < maxiter
+        iter += 1
+
+        vfi_iter!(new_v, itp_q, dd)
+
+        # Distancia entre la función de valor y el guess viejo 
+        dist = norm(new_v - dd.v) / (1 + norm(dd.v))
+
+        # Actualiza la función de valor 
+        dd.v .= new_v
+        verbose && print("Iteration $iter. Distance = $dist\n")
+    end
+    dist < tol && print("✓")
+end
+
+
+
+
+
+
+
+
+
+
+
+
+#Gráfico 
+
+
+
+
+
+
+
+# Define el valor de y que deseas utilizar para la comparación
+y_value = 1.0  # Cambia esto al valor de y que te interese
+
+# Resuelve el modelo original
+dd_original = NoDefault2()
+vfi!(dd_original)
+
+# Resuelve el modelo con robustez
+dd_robust = NoDefault(θ=5)  
+vfi!(dd_robust)
+
+# Calcula la propensión marginal al consumo en equilibrio parcial para el modelo original
+propensity_original = dd_original.gc[:, findfirst(dd_original.ygrid .≈ y_value)]
+
+# Calcula la propensión marginal al consumo en equilibrio parcial para el modelo con robustez
+propensity_robust = dd_robust.gc[:, findfirst(dd_robust.ygrid .≈ y_value)]
+
+# Crea un gráfico de dispersión para comparar las propensiones marginales al consumo
+trace_original = scatter(x=dd_original.bgrid, y=propensity_original ./ y_value, mode="lines+markers", name="Original")
+trace_robust = scatter(x=dd_robust.bgrid, y=propensity_robust ./ y_value, mode="lines+markers", name="Robusto")
+
+data = [trace_original, trace_robust]
+
+layout = Layout(
+    xaxis_title="Bono (b)",
+    yaxis_title="Propensión Marginal al Consumo (c(b, y)/y)",
+    title="Comparación de Propensión Marginal al Consumo (Equilibrio Parcial)"
+)
+
+plot(data, layout)
 
 
 
@@ -624,42 +875,51 @@ end
 
 
 
-#Simulador Opcional
-function iter_simul_ifp(kt, yt, itp_gc, itp_gk, ymin, ymax, ρ, σ)
-    ct = itp_gc(kt, yt)
 
-    kp = itp_gk(kt, yt)
+
+
+
+
+
+
+#simulador
+using PlotlyJS, Random
+
+function iter_simul_deuda(bt, yt, itp_gc, itp_gb, ymin, ymax, ρ, σ)
+    ct = itp_gc(bt, yt)
+
+    bp = itp_gb(bt, yt)
 
     ϵt = rand(Normal(0,1))
 	yp = exp(ρ * log(yt) + σ * ϵt)
 
     yp = max(min(ymax, yp), ymin)
 
-    return kp, yp, ct
+    return bp, yp, ct
 end
 
-function simul(dd::IFP; k0 = mean(dd.kgrid), y0 = mean(dd.ygrid), T = 10_000)    
+function simul(dd::NoDefault; b0 = mean(dd.bgrid), y0 = mean(dd.ygrid), T = 10000)    
     ymin, ymax = extrema(dd.ygrid)
     ρ = 0.8
     σ = 0.02
-    knots = (dd.kgrid, dd.ygrid)
+    bnots = (dd.bgrid, dd.ygrid)
     
-    itp_gk = interpolate(knots, dd.gk, Gridded(Linear()))
-    itp_gc = interpolate(knots, dd.gc, Gridded(Linear()))
+    itp_gb = interpolate(bnots, dd.gb, Gridded(Linear()))
+    itp_gc = interpolate(bnots, dd.gc, Gridded(Linear()))
 
-    sample = Dict(sym => Vector{Float64}(undef, T) for sym in (:k, :y, :c))
+    sample = Dict(sym => Vector{Float64}(undef, T) for sym in (:b, :y, :c))
 
     sample[:y][1] = y0
-    sample[:k][1] = k0
+    sample[:b][1] = b0
     
     for jt in 1:T
 
-        k0, y0, c = iter_simul_ifp(k0, y0, itp_gc, itp_gk, ymin, ymax, ρ, σ)
+        b0, y0, c = iter_simul_deuda(b0, y0, itp_gc, itp_gb, ymin, ymax, ρ, σ)
 
         sample[:c][jt] = c
 
         if jt < T
-            sample[:k][jt+1] = k0
+            sample[:b][jt+1] = b0
             sample[:y][jt+1] = y0
         end
     end
@@ -668,43 +928,101 @@ function simul(dd::IFP; k0 = mean(dd.kgrid), y0 = mean(dd.ygrid), T = 10_000)
 end
 
 
-using PlotlyJS
 
-# Simulación
-# Define y simula una instancia de IFP
-dd = IFP(; β = 0.96, r = 0.02, γ = 2, Nk = 20, Ny = 25, μy = 1, ρy = 0.8, σy = 0.02)
-simulated_data = simul(dd)
+dd=NoDefault(;
+β=0.96,
+γ=2,
+r=0.017, #Tasa libre de riesgo
+ρy=0.945, #Persistencia del AR1 para el ingreso
+σy=0.025, #Volatibilidad del AR1 para el ingreso
+Nb=200, #puntos para los bonos
+Ny=21, #puntos para el ingreso
+bmax=0.9, #nivel maximo de los bonos
+θ=0.5
+)
 
-# Extraer series de c/y y k
-c_series = simulated_data[:c]
-y_series = simulated_data[:y]
-k_series = simulated_data[:k]
+vfi!(dd; tol = 1e-8, maxiter = 2000, verbose = true)
 
-# Calcular c/y
-cy_series = c_series ./ y_series
-
-# Crear histogramas
-hist_cy = histogram(x=cy_series, nbinsx=50, name="Distribución Ergódica de c/y")
-hist_k = histogram(x=k_series, nbinsx=50, name="Distribución Ergódica de k")
-
-# Crear un gráfico de subtramas
-
-fig = plot([hist_cy, hist_k], Layout(xaxis_title="Valores", yaxis_title="Frecuencia"))
-
-# Mostrar el gráfico
-display(fig)
-
-# Calcular estadísticas
-mean_cy = mean(cy_series)
-mean_k = mean(k_series)
-quantiles_cy = quantile(cy_series, [0.25, 0.5, 0.75])
-
-println("Media de c/y: $mean_cy")
-println("Media de k: $mean_k")
-println("Cuantiles de c/y (25th, 50th, 75th percentiles): $quantiles_cy")
+simulacion = simul(dd, b0 = mean(dd.bgrid), y0 = mean(dd.ygrid), T = 10000)
 
 
+cy_sim = simulacion[:c] ./ simulacion[:y]
+b_sim = simulacion[:b]
+
+plot([scatter(x=1:length(cy_sim), y=cy_sim, mode="lines+markers", name="c/y"), scatter(x=1:length(b_sim), y=b_sim, mode="lines+markers", name="b")])
+
+#Veo las distribuciones de deuda y consumo
+a=histogram_cy_sim = plot(PlotlyJS.histogram(x = cy_sim, nbinsx = 10, name = "Distribución de c/y simulado"),
+Layout(
+	title = "Distribución de c/y simulado",
+	xaxis_range = [1, 1.5],
+	yaxis_range = [0, 5],
+	xaxis_title = "Valor de c/y",
+	yaxis_title = "Frecuencia"
+))
+savefig(a,"histogram_cy_robust0.5.png")
+
+b=histogram_b_sim = plot(PlotlyJS.histogram(x = simulacion[:b], nbinsx = 10, name = "Distribución de b simulado"),
+Layout(
+	title = "Distribución de b simulado",
+	xaxis_range = [0, 1],
+	yaxis_range = [0, 5],
+	xaxis_title = "Valor de b",
+	yaxis_title = "Frecuencia"
+)
+)
+
+savefig(b,"histogram_b_robust0.5.png")
 
 
 
-#Ejercicio 2: de nuevo 
+#Ahora vamos con un theta de 5 y 1
+
+dd2=NoDefault(;
+β=0.96,
+γ=2,
+r=0.017, #Tasa libre de riesgo
+ρy=0.945, #Persistencia del AR1 para el ingreso
+σy=0.025, #Volatibilidad del AR1 para el ingreso
+Nb=200, #puntos para los bonos
+Ny=21, #puntos para el ingreso
+bmax=0.9, #nivel maximo de los bonos
+θ=5
+)
+
+vfi!(dd2; tol = 1e-8, maxiter = 2000, verbose = true)
+
+simulacion = simul(dd2, b0 = mean(dd.bgrid), y0 = mean(dd.ygrid), T = 10000)
+
+
+cy_sim = simulacion[:c] ./ simulacion[:y]
+b_sim = simulacion[:b]
+
+plot([scatter(x=1:length(cy_sim), y=cy_sim, mode="lines+markers", name="c/y"), scatter(x=1:length(b_sim), y=b_sim, mode="lines+markers", name="b")])
+
+#Veo las distribuciones de deuda y consumo
+a=histogram_cy_sim = plot(PlotlyJS.histogram(x = cy_sim, nbinsx = 10, name = "Distribución de c/y simulado"),
+Layout(
+	title = "Distribución de c/y simulado",
+	xaxis_range = [1, 1.5],
+	yaxis_range = [0, 5],
+	xaxis_title = "Valor de c/y",
+	yaxis_title = "Frecuencia"
+))
+savefig(a,"histogram_cy_robust1.png")
+
+b=histogram_b_sim = plot(PlotlyJS.histogram(x = simulacion[:b], nbinsx = 10, name = "Distribución de b simulado"),
+Layout(
+	title = "Distribución de b simulado",
+	xaxis_range = [0, 1],
+	yaxis_range = [0, 5],
+	xaxis_title = "Valor de b",
+	yaxis_title = "Frecuencia"
+)
+)
+
+savefig(b,"histogram_b_robust1.png")
+
+p=[histogram_cy_sim;histogram_b_sim]
+
+savefig(p,"histogram_robust5conjunto.png")
